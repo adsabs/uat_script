@@ -27,7 +27,7 @@ from transformers import AutoTokenizer, AutoModelForSequenceClassification
 
 # from adsputils import get_date
 # from adsmsg import OrcidClaims
-from ClassifierPipeline import classifier, tasks
+# from ClassifierPipeline import classifier, tasks
 # from ADSOrcid import updater, tasks
 # from ADSOrcid.models import ClaimsLog, KeyValue, Records, AuthorInfo
 
@@ -96,7 +96,7 @@ def load_model_and_tokenizer(pretrained_model_name_or_path=None, revision=None, 
 
     return model_dict
 
-def prepare_records(records_path):
+def prepare_new_records(records_path):
     """
     Takes a path to a .csv file of records and converts each record into a
     dictionary with the following keys: bibcode and text (a combination of 
@@ -123,9 +123,10 @@ def prepare_records(records_path):
             record['text'] = row[1] + ' ' + row[2]
 
             print('testing message')
+            print('bibcode')
             # Now send record to classification queue
             # For Testing
-            tasks.task_send_input_record_to_classifier(record)
+            # tasks.task_send_input_record_to_classifier(record)
             # For Production
             # tasks.task_send_input_record_to_classifier.delay(record)
 
@@ -272,22 +273,10 @@ if __name__ == '__main__':
         # Open .csv file and read in records
         # Convert records to send to classifier
 
-    # import pdb;pdb.set_trace()
-    if args.validate:
-        print("Validating records")
-
-    # import pdb;pdb.set_trace()
     if args.new_records:
         print("Processing new records")
-        prepare_records(records_path)
+        prepare_new_ecords(records_path)
         # records = score_records(records_path)
-
-        # for record in records:
-            # print("Record: {}".format(record['bibcode']))
-            # print("Text: {}".format(record['text']))
-            # print("Categories: {}".format(record['categories']))
-            # print("Scores: {}".format(record['scores']))
-        # records = classify_records_from_scores(records)
 
     print("Done")
     import pdb;pdb.set_trace()

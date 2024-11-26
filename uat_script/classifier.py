@@ -1,6 +1,83 @@
+import os
 from tqdm.auto import tqdm
 from transformers import pipeline, AutoTokenizer, AutoModelForSequenceClassification
 from torch import no_grad, tensor
+import json
+
+from adsputils import setup_logging, load_config
+proj_home = os.path.realpath(os.path.join(os.path.dirname(__file__),'../'))
+# global config
+config = load_config(proj_home=proj_home)
+logger = setup_logging('classifier.py', proj_home=proj_home,
+                        level=config.get('LOGGING_LEVEL', 'INFO'),
+                        attach_stdout=config.get('LOG_STDOUT', False))
+
+
+def load_uat():
+
+    with open(config['UAT_JSON_PATH'], 'r') as f:
+        uat_list = json.load(f)
+
+# build the dict that matches UAT ID (numbers) to common names
+    uat_names = {}
+    for entry in uat_list:
+        uat_id = int(entry['uri'].split('/')[-1])
+        uat_names[uat_id] = entry['name'].lower().strip()
+        # dont add the alt names
+        # if 'altNames' in entry.keys() and entry['altNames'] is not None:
+        #     uat_names[uat_id] = uat_names[uat_id] + [alt_name.lower().strip() for alt_name in entry['altNames']]
+
+	# sort by key
+    uat_names = dict(sorted(uat_names.items()))
+
+    return uat_names
+
+def load_model_pipeline(pretrained_model_name_or_path=None, revision=None, tokenizer_model_name_or_path=None):
+    """
+    Load the model and tokenizer for the classification task, as well as the
+    label mappings. Returns the model, tokenizer, and label mappings as a
+    dictionary.
+
+    Parameters
+    ----------
+    pretrained_model_name_or_path : str (optional) (default=None) Specifies the
+        model name or path to the model to load. If None, then reads from the 
+        config file.
+    revision : str (optional) (default=None) Specifies the revision of the model
+    tokenizer_model_name_or_path : str (optional) (default=None) Specifies the
+        model name or path to the tokenizer to load. If None, then defaults to
+        the pretrained_model_name_or_path.
+    """
+    # Define labels and ID mappings
+    # labels = ['Astronomy', 'Heliophysics', 'Planetary Science', 'Earth Science', 'NASA-funded Biophysics', 'Other Physics', 'Other', 'Text Garbage']
+    # id2label = {i:c for i,c in enumerate(labels) }
+    # label2id = {v:k for k,v in id2label.items()}
+    uat_names = load_uat()
+
+    # Define model and tokenizer
+    if pretrained_model_name_or_path is None:
+        pretrained_model_name_or_path = config['CLASSIFICATION_PRETRAINED_MODEL']
+    if revision is None:
+        revision = config['CLASSIFICATION_PRETRAINED_MODEL_REVISION']
+    if tokenizer_model_name_or_path is None:
+        tokenizer_model_name_or_path = config['CLASSIFICATION_PRETRAINED_MODEL_TOKENIZER']
+
+    pipe = pipeline(task='sentiment-analysis',
+                    model=pretrained_model_name_or_path,
+					tokenizer=AutoTokenizer.from_pretrained(pretrained_model_name_or_path, 
+															model_max_length=512, 
+															do_lower_case=False,
+															),
+					revision=revision,
+					num_workers=1,
+					batch_size=32,
+					return_all_scores=True,
+					truncation=True,
+					)
+
+
+    return pipe
+
 
 
 # split tokenized text into chunks for the model
@@ -98,4 +175,101 @@ def batch_assign_SciX_categories(list_of_texts, tokenizer, model,labels,id2label
     
     return(list_of_categories, list_of_scores)
     
+
+def score_record(record):
+    """
+    Provide classification scores for a record using the following
+        categories:
+            0 - Astronomy
+            1 - HelioPhysics
+            2 - Planetary Science
+            3 - Earth Science
+            4 - Biological and Physical Sciences
+            5 - Other Physics
+            6 - Other
+            7 - Garbage
+
+    Parameters
+    ----------
+    records_path : str (required) (default=None) Path to a .csv file of records
+
+    Returns
+    -------
+    records : dictionary with the following keys: bibcode, text,
+                categories, scores, and model information
+    """
+    # Load model and tokenizer
+    model_dict = load_model_and_tokenizer()
+
+    text = f"{record['title']} {record['abstract']}"
+
+    # Classify record
+    record['categories'], record['scores'] = classifier.batch_assign_SciX_categories(
+                                [text],model_dict['tokenizer'],
+                                model_dict['model'],model_dict['labels'],
+                                model_dict['id2label'],model_dict['label2id'])
+
+    # Because the classifier returns a list of lists so it can batch process
+    # Take only the first element of each list
+    record['categories'] = record['categories'][0]
+    record['scores'] = record['scores'][0]
+
+    # Append model information to record
+    # record['model'] = model_dict['model']
+    record['model'] = model_dict
+
+
+    # print("Record: {}".format(record['bibcode']))
+    # print("Text: {}".format(record['text']))
+    # print("Categories: {}".format(record['categories']))
+    # print("Scores: {}".format(record['scores']))
+
+    return record
+
+def classify_record_from_scores(record):
+    """
+    Classify a record after it has been scored. 
+
+    Parameters
+    ----------
+    record : dictionary (required) (default=None) Dictionary with the following
+        keys: bibcode, text, categories, scores, and model information
+
+    Returns
+    -------
+    record : dictionary with the following keys: bibcode, text, categories,
+        scores, model information, and Collections
+    """
+
+    # Fetch thresholds from config file
+    thresholds = config['CLASSIFICATION_THRESHOLDS']
+    # print('Thresholds: {}'.format(thresholds))
+
+
+    scores = record['scores']
+    categories = record['categories']
+    # max_score_index = scores.index(max(scores))
+    # max_category = categories[max_score_index]
+    # max_score = scores[max_score_index]
+
+    meet_threshold = [score > threshold for score, threshold in zip(scores, thresholds)]
+
+    # Extra step to check for "Earth Science" articles miscategorized as "Other"
+    # This is expected to be less neccessary with improved training data
+    if config['ADDITIONAL_EARTH_SCIENCE_PROCESSING'] is True:
+        # print('Additional Earth Science Processing')
+        # import pdb;pdb.set_trace()
+        if meet_threshold[categories.index('Other')] is True:
+            # If Earth Science score above additional threshold
+            if scores[categories.index('Earth Science')] \
+                    > config['ADDITIONAL_EARTH_SCIENCE_PROCESSING_THRESHOLD']:
+                meet_threshold[categories.index('Other')] = False
+                meet_threshold[categories.index('Earth Science')] = True
+
+    # Append collections to record
+    record['collections'] = [category for category, threshold in zip(categories, meet_threshold) if threshold is True]
+    record['earth_science_adjustment'] = config['ADDITIONAL_EARTH_SCIENCE_PROCESSING']
+
+    return record
+
 
