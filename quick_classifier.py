@@ -50,6 +50,34 @@ def top_k_scores(scores, k):
         
 def bottom_k_scores(scores, k):
     return(heapq.nsmallest(k, scores, key=lambda x: x['score']) )
+
+def get_keyword_hierarchy(keyword):
+    hierarchy_paths = []
+
+    # import pdb;pdb.set_trace()
+    with open(config['UAT_CSV_PATH'], 'r', newline='', encoding='utf-8') as csvfile:
+        reader = csv.reader(csvfile)
+
+        header = next(reader)
+
+        # import pdb;pdb.set_trace()
+        for row in reader:
+            # print(row)
+            row = [word.lower() for word in row]
+            if keyword in row:
+                idx = row.index(keyword)
+
+                path = row[:idx+1]
+                hierarchy_paths.append(path)
+
+    # Only take unique paths
+    unique_tuples = set(tuple(sublist) for sublist in hierarchy_paths)
+    output_list = [list(t) for t in unique_tuples]
+    output_list = ['/'.join(sublist) for sublist in output_list]
+
+    return output_list
+    
+
 # =============================== MAIN ======================================= #
 
 if __name__ == '__main__':
@@ -69,7 +97,7 @@ if __name__ == '__main__':
 
     if args.records:
         records_path = args.records
-        out_path = records_path.replace('.csv', 'uat_keywords.tsv')
+        out_path = records_path.replace('.csv', '_uat_keywords.tsv')
         print(f'Reading in {records_path} may take a minute for large input files.')
         print(f'Will write output to {out_path}.')
     else:
@@ -79,7 +107,7 @@ if __name__ == '__main__':
     output_idx = 0
     output_list = []
     output_batch = 500
-    header = 'bibcode,title,abstract,keywords,scores,threshold'
+    header = 'bibcode,uat_branch'
 
 
     with open(records_path, 'r') as f:
@@ -136,11 +164,14 @@ if __name__ == '__main__':
                 keyword_list = [kw['category'] for kw in keywords]
                 score_list = [kw['score'] for kw in keywords]
 
-
-            # header = 'bibcode,title,abstract,keywords,scores,threshold'
-            record_output = [record['bibcode'],record['title'],record['abstract'],', '.join(map(str, keyword_list)),', '.join(map(str, score_list)),str(threshold)]
-
-            output_list.append(record_output)
+                for keyword in keywords:
+                    print()
+                    print('Keyword')
+                    print(keyword)
+                    hierarchy = get_keyword_hierarchy(keyword['category'])
+                    for path in hierarchy:
+                        record_output = [record['bibcode'], path, keyword['label']]
+                        output_list.append(record_output)
 
         if output_idx == 0:
             include_header = True
