@@ -50,6 +50,31 @@ def top_k_scores(scores, k):
         
 def bottom_k_scores(scores, k):
     return(heapq.nsmallest(k, scores, key=lambda x: x['score']) )
+
+def get_keyword_hierarchy(keyword):
+    hierarchy_paths = []
+
+    with open(config['UAT_CSV_PATH'], 'r', newline='', encoding='utf-8') as csvfile:
+        reader = csv.reader(csvfile)
+
+        header = next(reader)
+
+        for row in reader:
+            row = [word.lower() for word in row]
+            if keyword in row:
+                idx = row.index(keyword)
+
+                path = row[:idx+1]
+                hierarchy_paths.append(path)
+
+    # Take only unique paths, allow different paths to same concept
+    unique_tuples = set(tuple(sublist) for sublist in hierarchy_paths)
+    output_list = [list(t) for t in unique_tuples]
+    output_list = ['/'.join(sublist) for sublist in output_list]
+
+    return output_list
+    
+
 # =============================== MAIN ======================================= #
 
 if __name__ == '__main__':
@@ -61,26 +86,46 @@ if __name__ == '__main__':
                         '--records',
                         dest='records',
                         action='store',
-                        help='Path to comma delimited list of new records' +
-                             'to process: columns: bibcode, title, abstract')
+                        help='Path to list of bibcodes to process')
+    parser.add_argument('-p',
+                        '--preserve_filename',
+                        dest='preserve_filename',
+                        action='store_true',
+                        help='Set to apply input filename to output')
+    parser.add_argument('-v',
+                        '--verbose',
+                        dest='verbose',
+                        action='store_true',
+                        help='Print individual record information to screen as records are being processed')
 
     args = parser.parse_args()
 
+    if args.preserve_filename:
+        preserve_filename = True
+    else:
+        preserve_filename = False
 
     if args.records:
         records_path = args.records
-        out_path = records_path.replace('.csv', 'uat_keywords.tsv')
+        if preserve_filename:
+            out_path = records_path.replace('.csv', '_uat_keywords.tsv')
+        else:
+            out_path = config['OUTPUT_FILE']
         print(f'Reading in {records_path} may take a minute for large input files.')
         print(f'Will write output to {out_path}.')
     else:
         print("Please provide a path to a .csv file with records to process.")
         exit()
 
+    if args.verbose:
+        verbose = True
+    else:
+        verbose = False
+
     output_idx = 0
     output_list = []
     output_batch = 500
-    header = 'bibcode,title,abstract,keywords,scores,threshold'
-
+    header = 'bibcode,uat_branch,uat_id'
 
     with open(records_path, 'r') as f:
         bibcodes = f.read().splitlines()
@@ -113,16 +158,18 @@ if __name__ == '__main__':
 
             text = str(title) + ' ' + str(abstract)
 
-            print()
-            print(f'Bibcode: {record["bibcode"]}')
-            print(f'Title: {title}')
-            print(f'Abstract: {abstract}')
+            if verbose:
+                print()
+                print(f'Bibcode: {record["bibcode"]}')
+                print(f'Title: {title}')
+                print(f'Abstract: {abstract}')
+
             # Inference
             scores = uat_pipeline(text)
             scores = scores[0]
 
             # Thresholding
-            threshold = 0.15
+            threshold = config['CLASSIFICATION_THRESHOLD']
 
             try:
                 keywords = [s for s in scores if s['score'] >= threshold]
@@ -136,11 +183,15 @@ if __name__ == '__main__':
                 keyword_list = [kw['category'] for kw in keywords]
                 score_list = [kw['score'] for kw in keywords]
 
-
-            # header = 'bibcode,title,abstract,keywords,scores,threshold'
-            record_output = [record['bibcode'],record['title'],record['abstract'],', '.join(map(str, keyword_list)),', '.join(map(str, score_list)),str(threshold)]
-
-            output_list.append(record_output)
+                for keyword in keywords:
+                    if verbose:
+                        print()
+                        print('Keyword')
+                        print(keyword)
+                    hierarchy = get_keyword_hierarchy(keyword['category'])
+                    for path in hierarchy:
+                        record_output = [record['bibcode'], path, keyword['label']]
+                        output_list.append(record_output)
 
         if output_idx == 0:
             include_header = True
