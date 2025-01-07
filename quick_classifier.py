@@ -38,7 +38,7 @@ uat_names = load_uat()
 
 # =============================== FUNCTIONS ======================================= #
 
-def write_batch_to_tsv(batch, header, filename, mode='w', include_header=True):
+def write_batch_to_tsv(batch, header, filename, mode='a', include_header=False):
     with open(filename, mode, newline='') as file:
         writer = csv.writer(file, delimiter='\t')
         if include_header:
@@ -194,8 +194,8 @@ if __name__ == '__main__':
                         output_list.append(record_output)
 
         if output_idx == 0:
-            include_header = True
-            mode = 'w'
+            include_header = False
+            mode = 'a'
         else:
             include_header = False
             mode = 'a'
