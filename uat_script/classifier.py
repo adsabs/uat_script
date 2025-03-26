@@ -55,6 +55,7 @@ def load_model_pipeline(pretrained_model_name_or_path=None, revision=None, token
     # Define UAT labels and names
     uat_names = load_uat_names()
 
+
     # Define model and tokenizer
     if pretrained_model_name_or_path is None:
         pretrained_model_name_or_path = config['CLASSIFICATION_PRETRAINED_MODEL']
@@ -62,6 +63,8 @@ def load_model_pipeline(pretrained_model_name_or_path=None, revision=None, token
         revision = config['CLASSIFICATION_PRETRAINED_MODEL_REVISION']
     if tokenizer_model_name_or_path is None:
         tokenizer_model_name_or_path = config['CLASSIFICATION_PRETRAINED_MODEL_TOKENIZER']
+
+    print(f'Loading model: {pretrained_model_name_or_path}')
 
     pipe = pipeline(task='sentiment-analysis',
                     model=pretrained_model_name_or_path,
