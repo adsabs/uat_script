@@ -16,13 +16,17 @@ logger = setup_logging('classifier.py', proj_home=proj_home,
 def load_uat():
 
     with open(config['UAT_JSON_PATH'], 'r') as f:
-        uat_list = json.load(f)
+        uat_dict = json.load(f)
 
+    return uat_dict
+
+def load_uat_names():
     # build the dict that matches UAT ID (numbers) to common names
+    uat_dict = load_uat()
+
     uat_names = {}
-    for entry in uat_list:
-        uat_id = int(entry['uri'].split('/')[-1])
-        uat_names[uat_id] = entry['name'].lower().strip()
+    for entry in uat_dict.keys():
+        uat_names[entry] = uat_dict[entry]['name'].lower().strip()
         # dont add the alt names
         # if 'altNames' in entry.keys() and entry['altNames'] is not None:
         #     uat_names[uat_id] = uat_names[uat_id] + [alt_name.lower().strip() for alt_name in entry['altNames']]
@@ -49,7 +53,8 @@ def load_model_pipeline(pretrained_model_name_or_path=None, revision=None, token
         the pretrained_model_name_or_path.
     """
     # Define UAT labels and names
-    uat_names = load_uat()
+    uat_names = load_uat_names()
+
 
     # Define model and tokenizer
     if pretrained_model_name_or_path is None:
@@ -58,6 +63,8 @@ def load_model_pipeline(pretrained_model_name_or_path=None, revision=None, token
         revision = config['CLASSIFICATION_PRETRAINED_MODEL_REVISION']
     if tokenizer_model_name_or_path is None:
         tokenizer_model_name_or_path = config['CLASSIFICATION_PRETRAINED_MODEL_TOKENIZER']
+
+    print(f'Loading model: {pretrained_model_name_or_path}')
 
     pipe = pipeline(task='sentiment-analysis',
                     model=pretrained_model_name_or_path,
