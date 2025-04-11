@@ -204,7 +204,9 @@ if __name__ == '__main__':
                     # reverse the path to go from root -> leaf
                     path = paths_scores_list[max_mean_score_ind]['path'][::-1]
                     path = [uat_names.get(p, 'Unknown') for p in path]
-                    path = '/'.join(path)
+                    # path = '/'.join(path)
+                    path = path[-1] # get the last element of the path
+                    # Not record path at moment
                     record_output = [record['bibcode'], path, keyword['label']]
                     output_list.append(record_output)
 
